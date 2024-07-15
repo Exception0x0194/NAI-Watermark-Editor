@@ -2,13 +2,6 @@
   <h1>NAI隐匿水印修改器</h1>
   <p>修改NAI生成图像中的隐匿水印内容</p>
 
-
-  <div v-if="imgFileRef">
-    <div v-if="imageRef">
-      <img v-if="imageRef" v-bind="imageRef" alt="" style="display: block; width: auto; height: 30vh; margin:auto" />
-    </div>
-  </div>
-
   <div style="margin: 0 auto">
     <el-upload class="upload-demo" drag multiple :before-upload="handleUpload">
       <el-icon class="el-icon--upload"><upload-filled /></el-icon>
@@ -16,28 +9,16 @@
     </el-upload>
   </div>
 
-  <div v-if="imgFileRef">
-    <div v-if="imgfileInfoRef">
-      <h1 class="font-bold text-2xl mb-4">图片信息</h1>
-      <div :class="[index === 0 && 'border-t border-t-gray-300']"
-        class="bg-white border-b border-l border-r px-4 border-b-gray-300 border-l-gray-300 border-r-gray-300 py-2"
-        v-for="(item, index) in imgfileInfoRef" :key="item.key">
-        <h1 class="font-semibold text-sm text-gray-800">
-          {{ item.key }}
-          <el-popover placement="top-start" trigger="hover" content="点击复制" style="min-width: 10px"
-            v-if="showCopyBtn(item.key)">
-            <template #reference>
-              <el-button style="margin-left: 6px" :icon="CopyDocument" :link="true"
-                @click="item.key == 'Comment' ? copy(jsonData.uc) : copy(item.value)" />
-            </template>
-          </el-popover>
-        </h1>
-        <el-input v-model="item.value" type="textarea" class="text-wrap break-all text-sm mt-1 text-gray-600"
-          style="white-space: pre-wrap" />
+  <div v-if="imgFileRef && imgfileInfoRef" style="display: grid;">
+    <div v-for="item in imgfileInfoRef" :key="item.key">
+      <div style="border: solid grey 1px; margin-top:-1px; padding:5px">
+        <span style="font: bold; align-self: flex-start;"> {{ item.key }}</span>
+        <el-input v-model="item.value" type="textarea" style="white-space: pre-wrap;"
+          :autosize="{ minRows: 1, maxRows: 20 }" />
       </div>
     </div>
 
-    <div class="mt-4 text-left max-w-740px mx-auto">
+    <div style="margin-top:10px; place-content:center right;">
       <el-button type="primary" @click="saveMetadata">保存元信息到隐匿水印</el-button>
     </div>
   </div>
@@ -54,7 +35,7 @@
 import { ElMessage } from "element-plus";
 import { ref } from "vue";
 import useClipboard from "vue-clipboard3";
-import { Delete, Download, UploadFilled } from "@element-plus/icons-vue";
+import { UploadFilled } from "@element-plus/icons-vue";
 
 import { asyncFileReaderAsDataURL, getStealthExif, embedStealthExif } from "../utils";
 
