@@ -2,6 +2,12 @@
   <h1>NAI隐匿水印修改器</h1>
   <p>修改NAI生成图像中的隐匿水印内容</p>
 
+  <div v-if="imgFileRef">
+    <div style="border: solid gray 1px; margin-bottom: 10px; max-width: 720px; height: 40vh">
+      <img v-bind="imageRef" alt="" style="display: block; width: auto; max-width:720px; height: 40vh; margin:auto" />
+    </div>
+  </div>
+
   <div style="margin: 0 auto">
     <el-upload class="upload-demo" drag multiple :before-upload="handleUpload">
       <el-icon class="el-icon--upload"><upload-filled /></el-icon>
@@ -34,7 +40,6 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { ref } from "vue";
-import useClipboard from "vue-clipboard3";
 import { UploadFilled } from "@element-plus/icons-vue";
 
 import { asyncFileReaderAsDataURL, getStealthExif, embedStealthExif } from "../utils";
@@ -49,38 +54,8 @@ const modelFileInfoRef = ref(null);
 
 const jsonData = ref(null);
 const imageMaxSizeRef = ref(0);
-const { toClipboard } = useClipboard();
 
 const availableImgExt = ["png", "jpeg", "jpg", "webp", "bmp"]
-
-const copy = (value) => {
-  try {
-    toClipboard(value);
-    ElMessage({
-      message: "复制成功",
-      type: "success",
-    });
-  } catch (e) {
-    console.log(e);
-    ElMessage({
-      message: "复制失败",
-      type: "warning",
-    });
-  }
-};
-
-const showCopyBtn = (title) => {
-  if (!title) return false
-  if (
-    title == "Description" ||
-    title == "Comment" ||
-    title == "完整生成信息" ||
-    title.indexOf("提示词") != -1
-  ) {
-    return true;
-  }
-  return false;
-};
 
 const cleanData = () => {
   imgFileRef.value = null
@@ -129,7 +104,7 @@ async function readFileInfo(file) {
   } else {
     return [{
       key: "提示",
-      value: "无法读取到图像水印，这可能不是一张NAI生成的图片，或是经过压缩后丢失了水印的图片。",
+      value: "无法读取到图像水印，这可能不是一张 NAI 生成的图片，或是经过压缩后丢失了水印的图片。",
     }];
   }
 
@@ -137,7 +112,6 @@ async function readFileInfo(file) {
   const commentJson = JSON.parse(metadata["Comment"]);
   ok.push({ key: "prompt", value: commentJson.prompt });
   ok.push({ key: "uc", value: commentJson.uc });
-  ok.push({ key: "Title", value: metadata["Title"] });
   ok.push({ key: "Software", value: metadata["Software"] });
   ok.push({ key: "Source", value: metadata["Source"] });
 
@@ -158,24 +132,6 @@ const readImageBase64 = async () => {
   };
   imageMaxSizeRef.value = width;
 }
-
-const printableBytes = (size) => {
-  const printable = (d, z) => {
-    return `${d.toFixed(2)} ${z}`;
-  };
-
-  let kb = size / 1024;
-  if (kb < 1024) {
-    return printable(kb, "KB");
-  }
-  let mb = kb / 1024;
-  if (mb < 1024) {
-    return printable(mb, "MB");
-  }
-
-  let gb = mb / 1024;
-  return printable(gb, "GB");
-};
 
 const saveMetadata = async () => {
   // 重新读取图片中的隐匿水印
