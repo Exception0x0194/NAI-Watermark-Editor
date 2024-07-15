@@ -1,6 +1,6 @@
 <template>
-  <h1>NAI隐匿水印修改器</h1>
-  <p>修改NAI生成图像中的隐匿水印内容</p>
+  <h1>NAI 隐匿水印修改器</h1>
+  <p>修改 NAI 生成图像中的隐匿水印内容</p>
 
   <div v-if="imgFileRef">
     <div style="border: solid gray 1px; margin-bottom: 10px; max-width: 720px; height: 40vh">
@@ -17,14 +17,15 @@
 
   <div v-if="imgFileRef && imgfileInfoRef" style="display: grid;">
     <div v-for="item in imgfileInfoRef" :key="item.key">
-      <div style="border: solid grey 1px; margin-top:-1px; padding:5px">
-        <span style="font: bold; align-self: flex-start;"> {{ item.key }}</span>
+      <div
+        style="border: solid grey 1px; margin-top:-1px; padding:5px; display: flex; flex-direction: column;justify-content: flex-start;">
+        <span style="font-weight: bold; align-self: start; margin-left:3px; margin-bottom:3px"> {{ item.key }}</span>
         <el-input v-model="item.value" type="textarea" style="white-space: pre-wrap;"
           :autosize="{ minRows: 1, maxRows: 20 }" />
       </div>
     </div>
 
-    <div style="margin-top:10px; place-content:center right;">
+    <div style="margin-top:10px; display: flex; justify-content: flex-end;">
       <el-button type="primary" @click="saveMetadata">保存元信息到隐匿水印</el-button>
     </div>
   </div>
