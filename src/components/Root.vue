@@ -1,5 +1,5 @@
 <template>
-  <h1>NAI 隐匿水印修改器</h1>
+  <h1>NAI 隐匿水印编辑器</h1>
   <p>批量编辑 NAI 生成图像中的隐匿水印内容</p>
 
   <div v-if="firstImageRef">
