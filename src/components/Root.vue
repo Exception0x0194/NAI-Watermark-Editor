@@ -1,6 +1,6 @@
 <template>
   <h1>NAI 隐匿水印修改器</h1>
-  <p>修改 NAI 生成图像中的隐匿水印内容</p>
+  <p>批量修改 NAI 生成图像中的隐匿水印内容</p>
 
   <div v-if="firstImageRef">
     <div style="border: solid gray 1px; margin-bottom: 10px; max-width: 720px; height: 40vh">
@@ -12,8 +12,12 @@
   <div style="margin: 0 auto">
     <el-upload class="upload-demo" drag multiple :before-upload="handleUpload">
       <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-      <div class="el-upload__text">拖动文件到这里或者点击选择文件</div>
+      <div class="el-upload__text">拖动文件到这里或者<em>点击导入文件</em></div>
     </el-upload>
+  </div>
+
+  <div v-if="filesRef.length > 0" style="margin-left:3px; margin-bottom:5px;display: flex;">
+    已导入文件数量：{{ filesRef.length }}
   </div>
 
   <div v-if="firstFileInfoRef" style="display: grid;">
@@ -48,15 +52,15 @@ import { ZipWriter, Uint8ArrayReader } from '@zip.js/zip.js';
 import { createWriteStream } from 'streamsaver';
 
 const filesRef = ref<File[]>([]);
-const firstImageRef = ref<{ width: number, height: number, src: string }>(null);
-const firstFileInfoRef = ref<{ key: string, value: string }[]>(null);
+const firstImageRef = ref<{ width: number, height: number, src: string } | null>(null);
+const firstFileInfoRef = ref<{ key: string, value: string }[] | null>(null);
 
 const availableImgExt = ["png", "jpeg", "jpg", "webp", "bmp"]
 
 async function handleUpload(file: File) {
   console.log(file);
 
-  let fileExt = file.name.split(".").pop().toLowerCase();
+  let fileExt = file.name.split(".").pop()!.toLowerCase();
   if (availableImgExt.indexOf(fileExt) != -1) {
     // 加载文件信息
     loadImage(file);
@@ -64,7 +68,7 @@ async function handleUpload(file: File) {
     filesRef.value = [...filesRef.value, file];
   } else {
     ElMessage({
-      message: "解析失败，该文件可能不是一个正常的图片/模型文件。",
+      message: "不支持的文件类型：" + file.name,
       type: "error",
     });
   }
@@ -73,11 +77,11 @@ async function handleUpload(file: File) {
 
 async function loadImage(file: File) {
   // 读取文件内容
-  let fileBuffer = null;
+  let fileBuffer: string | null = null;
   const loadPromise = new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      fileBuffer = e.target.result;
+      fileBuffer = e.target!.result as string;
       resolve(e);
     };
     reader.onerror = (e) => {
@@ -89,11 +93,11 @@ async function loadImage(file: File) {
 
   try {
     const image = new Image();
-    image.src = fileBuffer;
+    image.src = fileBuffer!;
     await image.decode();
 
     const { width, height } = image;
-    firstImageRef.value = { width, height, src: fileBuffer };
+    firstImageRef.value = { width, height, src: fileBuffer! };
   } catch (error) {
     console.error("Error loading image: ", error);
     ElMessage({
@@ -105,11 +109,11 @@ async function loadImage(file: File) {
 
 async function loadImageInfo(file: File) {
   // 读取文件内容
-  let fileBuffer = null;
+  let fileBuffer: ArrayBuffer | null = null;
   const loadPromise = new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      fileBuffer = e.target.result;
+      fileBuffer = e.target!.result as ArrayBuffer;
       resolve(e);
     };
     reader.onerror = (e) => {
@@ -121,11 +125,11 @@ async function loadImageInfo(file: File) {
 
   // 读取需要显示的 metadata
   try {
-    const u8array = new Uint8Array(fileBuffer);
+    const u8array = new Uint8Array(fileBuffer!);
     const decodedString = decode_stealth_watermark(u8array);
     const metadata = JSON.parse(decodedString);
 
-    let ok = []
+    let ok: { key: string, value: string }[] = [];
     const commentJson = JSON.parse(metadata["Comment"]);
     ok.push({ key: "prompt", value: commentJson.prompt });
     ok.push({ key: "uc", value: commentJson.uc });
@@ -166,11 +170,11 @@ const saveMetadata = async () => {
 
   for (const file of filesRef.value) {
     // 读取文件内容
-    let fileBuffer = null;
+    let fileBuffer: ArrayBuffer | null = null;
     const loadPromise = new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        fileBuffer = e.target.result;
+        fileBuffer = e.target!.result as ArrayBuffer;
         resolve(e);
       };
       reader.onerror = (e) => {
@@ -180,7 +184,7 @@ const saveMetadata = async () => {
     });
     await loadPromise;
     // 重新读取隐匿水印；如果没有水印，读取预设内容
-    const u8Array = new Uint8Array(fileBuffer);
+    const u8Array = new Uint8Array(fileBuffer!);
     let metadata = {};
     try {
       const decodedString = decode_stealth_watermark(u8Array);
@@ -189,7 +193,7 @@ const saveMetadata = async () => {
 
     }
     // 用编辑后的信息覆盖原水印中的内容
-    const metadata = updateMetadata(metadata);
+    metadata = updateMetadata(metadata);
     // 写入水印到图片中
     const u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
     // 写入文件到 zip 流
@@ -208,7 +212,7 @@ const saveMetadata = async () => {
 function updateMetadata(metadata: Object) {
   const ret = metadata;
   // 读取编辑后的信息
-  const updatedMetadata = firstFileInfoRef.value.reduce((acc, item) => {
+  const updatedMetadata = firstFileInfoRef.value!.reduce((acc, item) => {
     acc[item.key] = item.value;
     return acc;
   }, {});
