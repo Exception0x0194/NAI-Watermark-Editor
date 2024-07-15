@@ -1,6 +1,6 @@
 <template>
   <h1>NAI 隐匿水印修改器</h1>
-  <p>批量修改 NAI 生成图像中的隐匿水印内容</p>
+  <p>批量编辑 NAI 生成图像中的隐匿水印内容</p>
 
   <div v-if="firstImageRef">
     <div style="border: solid gray 1px; margin-bottom: 10px; max-width: 720px; height: 40vh">
@@ -16,8 +16,12 @@
     </el-upload>
   </div>
 
-  <div v-if="filesRef.length > 0" style="margin-left:3px; margin-bottom:5px;display: flex;">
-    已导入文件数量：{{ filesRef.length }}
+  <div v-if="filesRef.length > 0"
+    style="margin:10px; display: flex; justify-content: space-between; align-items: center;">
+    <span style="">已导入文件数量：{{ filesRef.length }}</span>
+    <div style="">
+      <el-button type="primary" @click="saveMetadata">保存图片到压缩包</el-button>
+    </div>
   </div>
 
   <div v-if="firstFileInfoRef" style="display: grid;">
@@ -28,10 +32,6 @@
         <el-input v-model="item.value" type="textarea" style="white-space: pre-wrap;"
           :autosize="{ minRows: 1, maxRows: 20 }" />
       </div>
-    </div>
-
-    <div style="margin-top:10px; display: flex; justify-content: flex-end;">
-      <el-button type="primary" @click="saveMetadata">保存图片到压缩包</el-button>
     </div>
   </div>
 
@@ -55,7 +55,17 @@ const filesRef = ref<File[]>([]);
 const firstImageRef = ref<{ width: number, height: number, src: string } | null>(null);
 const firstFileInfoRef = ref<{ key: string, value: string }[] | null>(null);
 
-const availableImgExt = ["png", "jpeg", "jpg", "webp", "bmp"]
+const availableImgExt = ["png", "webp", "bmp"];
+
+const prioritizedCommentKeys = [
+  "prompt",
+  "uc"
+];
+const filteredMetadataKeys = [
+  "Description",
+  "Comment"
+];
+let metadataKeys: string[] = [], commentKeys: string[] = [];
 
 async function handleUpload(file: File) {
   console.log(file);
@@ -63,8 +73,8 @@ async function handleUpload(file: File) {
   let fileExt = file.name.split(".").pop()!.toLowerCase();
   if (availableImgExt.indexOf(fileExt) != -1) {
     // 加载文件信息
-    loadImage(file);
-    loadImageInfo(file);
+    await loadImage(file);
+    await loadImageInfo(file);
     filesRef.value = [...filesRef.value, file];
   } else {
     ElMessage({
@@ -76,6 +86,7 @@ async function handleUpload(file: File) {
 }
 
 async function loadImage(file: File) {
+  if (firstImageRef.value !== null) return;
   // 读取文件内容
   let fileBuffer: string | null = null;
   const loadPromise = new Promise((resolve, reject) => {
@@ -101,13 +112,14 @@ async function loadImage(file: File) {
   } catch (error) {
     console.error("Error loading image: ", error);
     ElMessage({
-      message: "无法加载或解码图片。",
+      message: "无法解码的图片：" + file.name,
       type: "error",
     });
   }
 }
 
 async function loadImageInfo(file: File) {
+  if (firstFileInfoRef.value !== null) return;
   // 读取文件内容
   let fileBuffer: ArrayBuffer | null = null;
   const loadPromise = new Promise((resolve, reject) => {
@@ -127,24 +139,35 @@ async function loadImageInfo(file: File) {
   try {
     const u8array = new Uint8Array(fileBuffer!);
     const decodedString = decode_stealth_watermark(u8array);
-    const metadata = JSON.parse(decodedString);
 
-    let ok: { key: string, value: string }[] = [];
-    const commentJson = JSON.parse(metadata["Comment"]);
-    ok.push({ key: "prompt", value: commentJson.prompt });
-    ok.push({ key: "uc", value: commentJson.uc });
-    ok.push({ key: "Software", value: metadata["Software"] });
-    ok.push({ key: "Source", value: metadata["Source"] });
+    const metadataJson = JSON.parse(decodedString);
+    const commentJson = JSON.parse(metadataJson["Comment"]);
 
-    console.log(metadata);
-    console.log(commentJson);
+    metadataKeys = Object.keys(metadataJson);
+    commentKeys = Object.keys(commentJson);
 
-    firstFileInfoRef.value = ok;
+    const ret: { key: string, value: string }[] = [];
+    for (const key of prioritizedCommentKeys) {
+      ret.push({ key: key, value: String(commentJson[key]) });
+    }
+    for (const key of metadataKeys) {
+      if (filteredMetadataKeys.indexOf(key) === -1) {
+        ret.push({ key: key, value: String(metadataJson[key]) });
+      }
+    }
+    for (const key of commentKeys) {
+      if (prioritizedCommentKeys.indexOf(key) === -1) {
+        ret.push({ key: key, value: String(commentJson[key]) });
+      }
+    }
+    console.log(ret);
+
+    firstFileInfoRef.value = ret;
   }
   catch (error) {
     console.error("Error loading metadata: ", error);
     ElMessage({
-      message: "无法加载图片信息。",
+      message: "没有元信息的图片：" + file.name,
       type: "warning",
     });
   }
@@ -183,21 +206,17 @@ const saveMetadata = async () => {
       reader.readAsArrayBuffer(file);
     });
     await loadPromise;
-    // 重新读取隐匿水印；如果没有水印，读取预设内容
     const u8Array = new Uint8Array(fileBuffer!);
-    let metadata = {};
+    // 获取修改后的 metadata 内容
+    const metadata = getMetadata();
     try {
-      const decodedString = decode_stealth_watermark(u8Array);
-      metadata = JSON.parse(decodedString);
+      // 写入水印到图片中
+      const u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
+      // 写入文件到 zip 流
+      await zipWriter.add("👻-" + file.name, new Uint8ArrayReader(u8ArrayWithWatermark));
     } catch (error) {
-
+      console.log("Error writing watermark: ", error);
     }
-    // 用编辑后的信息覆盖原水印中的内容
-    metadata = updateMetadata(metadata);
-    // 写入水印到图片中
-    const u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
-    // 写入文件到 zip 流
-    await zipWriter.add("👻-" + file.name, new Uint8ArrayReader(u8ArrayWithWatermark));
   }
 
   // 完成写入
@@ -209,27 +228,25 @@ const saveMetadata = async () => {
   });
 };
 
-function updateMetadata(metadata: Object) {
-  const ret = metadata;
-  // 读取编辑后的信息
-  const updatedMetadata = firstFileInfoRef.value!.reduce((acc, item) => {
-    acc[item.key] = item.value;
-    return acc;
-  }, {});
-  // 更新 Comment 字段中的 prompt 和 uc 字段
-  if (ret["Comment"]) {
-    const commentJson = JSON.parse(ret["Comment"]);
-    commentJson.prompt = updatedMetadata["prompt"];
-    commentJson.uc = updatedMetadata["uc"];
-    ret["Comment"] = JSON.stringify(commentJson);
+function getMetadata() {
+  if (firstFileInfoRef.value === null) {
+    return {};
   }
-  // 更新水印中的 Description 字段
-  ret["Description"] = updatedMetadata["prompt"];
-  // 更新 Software 和 Source 字段
-  ret["Software"] = updatedMetadata["Software"];
-  ret["Source"] = updatedMetadata["Source"];
-
-  return ret;
+  const metadataJson = {}, commentJson = {};
+  for (const item of firstFileInfoRef.value) {
+    if (metadataKeys.indexOf(item.key) !== -1) {
+      // Metadata item
+      metadataJson[item.key] = item.value;
+    } else {
+      // Comment item
+      commentJson[item.key] = item.value;
+      // Description
+      if (item.key === "prompt") metadataJson["Description"] = item.value;
+    }
+  }
+  // Stringified comment
+  metadataJson["Comment"] = JSON.stringify(commentJson);
+  return metadataJson;
 }
 
 </script>
