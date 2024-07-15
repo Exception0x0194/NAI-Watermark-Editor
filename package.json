@@ -10,8 +10,13 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.0.10",
+    "@zip.js/zip.js": "^2.7.45",
     "element-plus": "^2.2.18",
     "pako": "^2.1.0",
+    "stealth-watermark-editor": "^0.1.0",
+    "streamsaver": "^2.0.6",
+    "vite-plugin-top-level-await": "^1.4.1",
+    "vite-plugin-wasm": "^3.3.0",
     "vue": "^3.2.37"
   },
   "devDependencies": {

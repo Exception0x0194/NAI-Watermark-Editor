@@ -2,9 +2,10 @@
   <h1>NAI 隐匿水印修改器</h1>
   <p>修改 NAI 生成图像中的隐匿水印内容</p>
 
-  <div v-if="imgFileRef">
+  <div v-if="firstImageRef">
     <div style="border: solid gray 1px; margin-bottom: 10px; max-width: 720px; height: 40vh">
-      <img v-bind="imageRef" alt="" style="display: block; width: auto; max-width:720px; height: 40vh; margin:auto" />
+      <img v-bind="firstImageRef" alt=""
+        style="display: block; width: auto; max-width:720px; height: 40vh; margin:auto" />
     </div>
   </div>
 
@@ -15,8 +16,8 @@
     </el-upload>
   </div>
 
-  <div v-if="imgFileRef && imgfileInfoRef" style="display: grid;">
-    <div v-for="item in imgfileInfoRef" :key="item.key">
+  <div v-if="firstFileInfoRef" style="display: grid;">
+    <div v-for="item in firstFileInfoRef" :key="item.key">
       <div
         style="border: solid grey 1px; margin-top:-1px; padding:5px; display: flex; flex-direction: column;justify-content: flex-start;">
         <span style="font-weight: bold; align-self: start; margin-left:3px; margin-bottom:3px"> {{ item.key }}</span>
@@ -26,7 +27,7 @@
     </div>
 
     <div style="margin-top:10px; display: flex; justify-content: flex-end;">
-      <el-button type="primary" @click="saveMetadata">保存元信息到隐匿水印</el-button>
+      <el-button type="primary" @click="saveMetadata">保存图片到压缩包</el-button>
     </div>
   </div>
 
@@ -42,39 +43,25 @@
 import { ElMessage } from "element-plus";
 import { ref } from "vue";
 import { UploadFilled } from "@element-plus/icons-vue";
+import { embed_stealth_watermark, decode_stealth_watermark } from "stealth-watermark-editor";
+import { ZipWriter, Uint8ArrayReader } from '@zip.js/zip.js';
+import { createWriteStream } from 'streamsaver';
 
-import { asyncFileReaderAsDataURL, getStealthExif, embedStealthExif } from "../utils";
-
-const imgFileRef = ref(null);
-const imageRef = ref(null);
-const exifRef = ref(null);
-const imgfileInfoRef = ref(null);
-
-const modelFileRef = ref(null);
-const modelFileInfoRef = ref(null);
-
-const jsonData = ref(null);
-const imageMaxSizeRef = ref(0);
+const filesRef = ref<File[]>([]);
+const firstImageRef = ref<{ width: number, height: number, src: string }>(null);
+const firstFileInfoRef = ref<{ key: string, value: string }[]>(null);
 
 const availableImgExt = ["png", "jpeg", "jpg", "webp", "bmp"]
 
-const cleanData = () => {
-  imgFileRef.value = null
-  modelFileRef.value = null
-  imgfileInfoRef.value = null
-  modelFileInfoRef.value = null
-  exifRef.value = null
-  jsonData.value = null
-}
-
-async function handleUpload(file) {
+async function handleUpload(file: File) {
   console.log(file);
-  cleanData()
 
   let fileExt = file.name.split(".").pop().toLowerCase();
   if (availableImgExt.indexOf(fileExt) != -1) {
-    imgFileRef.value = file;
-    inspectImage(file)
+    // 加载文件信息
+    loadImage(file);
+    loadImageInfo(file);
+    filesRef.value = [...filesRef.value, file];
   } else {
     ElMessage({
       message: "解析失败，该文件可能不是一个正常的图片/模型文件。",
@@ -84,100 +71,161 @@ async function handleUpload(file) {
   return false;
 }
 
-const inspectImage = async (file) => {
-  await readImageBase64()
-  // exifRef.value = await readExif(file)
-  imgfileInfoRef.value = await readFileInfo(file)
-}
+async function loadImage(file: File) {
+  // 读取文件内容
+  let fileBuffer = null;
+  const loadPromise = new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      fileBuffer = e.target.result;
+      resolve(e);
+    };
+    reader.onerror = (e) => {
+      reject(e);
+    };
+    reader.readAsDataURL(file);
+  });
+  await loadPromise;
 
-async function readFileInfo(file) {
-  jsonData.value = null
-  let parsed = []
+  try {
+    const image = new Image();
+    image.src = fileBuffer;
+    await image.decode();
 
-  let metadata = await getStealthExif(imageRef.value.src)
-  if (metadata) {
-    parsed = Object.keys(metadata).map((key) => {
-      return {
-        keyword: key,
-        text: metadata[key],
-      }
-    });
-  } else {
-    return [{
-      key: "提示",
-      value: "无法读取到图像水印，这可能不是一张 NAI 生成的图片，或是经过压缩后丢失了水印的图片。",
-    }];
-  }
-
-  let ok = []
-  const commentJson = JSON.parse(metadata["Comment"]);
-  ok.push({ key: "prompt", value: commentJson.prompt });
-  ok.push({ key: "uc", value: commentJson.uc });
-  ok.push({ key: "Software", value: metadata["Software"] });
-  ok.push({ key: "Source", value: metadata["Source"] });
-
-  return ok
-}
-
-const readImageBase64 = async () => {
-  imageRef.value = null;
-  let result = await asyncFileReaderAsDataURL(imgFileRef.value)
-  const image = new Image();
-  image.src = result;
-  await image.decode();
-  const { width, height } = image;
-  imageRef.value = {
-    width,
-    height,
-    src: result,
-  };
-  imageMaxSizeRef.value = width;
-}
-
-const saveMetadata = async () => {
-  // 重新读取图片中的隐匿水印
-  const existingMetadata = await getStealthExif(imageRef.value.src);
-
-  // 从 imgfileInfoRef 中读取编辑后的数据
-  const updatedMetadata = imgfileInfoRef.value.reduce((acc, item) => {
-    acc[item.key] = item.value;
-    return acc;
-  }, {});
-
-  // 更新隐匿水印中的信息
-  if (existingMetadata) {
-    // 更新 Comment 字段中的 prompt 和 uc 字段
-    if (existingMetadata["Comment"]) {
-      const commentJson = JSON.parse(existingMetadata["Comment"]);
-      commentJson.prompt = updatedMetadata["prompt"];
-      commentJson.uc = updatedMetadata["uc"];
-      existingMetadata["Comment"] = JSON.stringify(commentJson);
-    }
-
-    // 更新水印中的 Description 字段
-    existingMetadata["Description"] = updatedMetadata["prompt"];
-
-    // 更新 Title、Software 和 Source 字段
-    existingMetadata["Title"] = updatedMetadata["Title"];
-    existingMetadata["Software"] = updatedMetadata["Software"];
-    existingMetadata["Source"] = updatedMetadata["Source"];
-
-    const imageDataUrl = imageRef.value.src;
-    const outputImageDataUrl = await embedStealthExif(imageDataUrl, JSON.stringify(existingMetadata));
-
-    // 替换页面中显示的图片
-    imageRef.value.src = outputImageDataUrl;
-
+    const { width, height } = image;
+    firstImageRef.value = { width, height, src: fileBuffer };
+  } catch (error) {
+    console.error("Error loading image: ", error);
     ElMessage({
-      message: "元信息已保存并嵌入图片",
-      type: "success",
-    });
-  } else {
-    ElMessage({
-      message: "无法读取原始水印信息，保存失败。",
+      message: "无法加载或解码图片。",
       type: "error",
     });
   }
+}
+
+async function loadImageInfo(file: File) {
+  // 读取文件内容
+  let fileBuffer = null;
+  const loadPromise = new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      fileBuffer = e.target.result;
+      resolve(e);
+    };
+    reader.onerror = (e) => {
+      reject(e);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+  await loadPromise;
+
+  // 读取需要显示的 metadata
+  try {
+    const u8array = new Uint8Array(fileBuffer);
+    const decodedString = decode_stealth_watermark(u8array);
+    const metadata = JSON.parse(decodedString);
+
+    let ok = []
+    const commentJson = JSON.parse(metadata["Comment"]);
+    ok.push({ key: "prompt", value: commentJson.prompt });
+    ok.push({ key: "uc", value: commentJson.uc });
+    ok.push({ key: "Software", value: metadata["Software"] });
+    ok.push({ key: "Source", value: metadata["Source"] });
+
+    console.log(metadata);
+    console.log(commentJson);
+
+    firstFileInfoRef.value = ok;
+  }
+  catch (error) {
+    console.error("Error loading metadata: ", error);
+    ElMessage({
+      message: "无法加载图片信息。",
+      type: "warning",
+    });
+  }
+}
+
+const saveMetadata = async () => {
+  ElMessage({
+    message: "正在写入水印并打包...",
+    type: "info",
+  });
+
+  // 创建 ZIP 文件的写入流
+  const fileStream = createWriteStream("images_with_edited_watermark.zip");
+  const writer = fileStream.getWriter();
+  const zipWriter = new ZipWriter(new WritableStream({
+    write(chunk) {
+      return writer.write(chunk);
+    },
+    close() {
+      writer.close();
+    }
+  }));
+
+  for (const file of filesRef.value) {
+    // 读取文件内容
+    let fileBuffer = null;
+    const loadPromise = new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        fileBuffer = e.target.result;
+        resolve(e);
+      };
+      reader.onerror = (e) => {
+        reject(e);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+    await loadPromise;
+    // 重新读取隐匿水印；如果没有水印，读取预设内容
+    const u8Array = new Uint8Array(fileBuffer);
+    let metadata = {};
+    try {
+      const decodedString = decode_stealth_watermark(u8Array);
+      metadata = JSON.parse(decodedString);
+    } catch (error) {
+
+    }
+    // 用编辑后的信息覆盖原水印中的内容
+    const metadata = updateMetadata(metadata);
+    // 写入水印到图片中
+    const u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
+    // 写入文件到 zip 流
+    await zipWriter.add("👻-" + file.name, new Uint8ArrayReader(u8ArrayWithWatermark));
+  }
+
+  // 完成写入
+  await zipWriter.close();
+
+  ElMessage({
+    message: "已保存压缩包",
+    type: "success",
+  });
 };
+
+function updateMetadata(metadata: Object) {
+  const ret = metadata;
+  // 读取编辑后的信息
+  const updatedMetadata = firstFileInfoRef.value.reduce((acc, item) => {
+    acc[item.key] = item.value;
+    return acc;
+  }, {});
+  // 更新 Comment 字段中的 prompt 和 uc 字段
+  if (ret["Comment"]) {
+    const commentJson = JSON.parse(ret["Comment"]);
+    commentJson.prompt = updatedMetadata["prompt"];
+    commentJson.uc = updatedMetadata["uc"];
+    ret["Comment"] = JSON.stringify(commentJson);
+  }
+  // 更新水印中的 Description 字段
+  ret["Description"] = updatedMetadata["prompt"];
+  // 更新 Software 和 Source 字段
+  ret["Software"] = updatedMetadata["Software"];
+  ret["Source"] = updatedMetadata["Source"];
+
+  return ret;
+}
 
 </script>
