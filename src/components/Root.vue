@@ -234,14 +234,22 @@ function getMetadata() {
   }
   const metadataJson = {}, commentJson = {};
   for (const item of firstFileInfoRef.value) {
+    const tryParse = (value: string) => {
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        return value;
+      }
+    }
+    const obj = tryParse(item.value);
     if (metadataKeys.indexOf(item.key) !== -1) {
       // Metadata item
-      metadataJson[item.key] = item.value;
+      metadataJson[item.key] = obj;
     } else {
       // Comment item
-      commentJson[item.key] = item.value;
+      commentJson[item.key] = obj;
       // Description
-      if (item.key === "prompt") metadataJson["Description"] = item.value;
+      if (item.key === "prompt") metadataJson["Description"] = obj;
     }
   }
   // Stringified comment
