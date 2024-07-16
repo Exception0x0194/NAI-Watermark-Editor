@@ -27,8 +27,9 @@
   <div v-if="firstFileInfoRef" style="display: grid;">
     <div v-for="item in firstFileInfoRef" :key="item.key">
       <div
-        style="border: solid grey 1px; margin-top:-1px; padding:5px; display: flex; flex-direction: column;justify-content: flex-start;">
-        <span style="font-weight: bold; align-self: start; margin-left:3px; margin-bottom:3px"> {{ item.key }}</span>
+        style="border: solid grey 1px; border-radius: 5px; margin-top:5px; padding:5px; display: flex; flex-direction: column;justify-content: flex-start;">
+        <span style="font-weight: bold; align-self: start; margin-left:3px; margin-bottom:3px">
+          {{ item.key }}</span>
         <el-input v-model="item.value" type="textarea" style="white-space: pre-wrap;"
           :autosize="{ minRows: 1, maxRows: 20 }" />
       </div>
@@ -148,17 +149,20 @@ async function loadImageInfo(file: File) {
 
     const ret: { key: string, value: string }[] = [];
     for (const key of prioritizedCommentKeys) {
+      // Push pos/neg prompts (from comments) first
       ret.push({ key: key, value: String(commentJson[key]) });
     }
     for (const key of metadataKeys) {
-      if (filteredMetadataKeys.indexOf(key) === -1) {
-        ret.push({ key: key, value: String(metadataJson[key]) });
-      }
+      // Remaining values in metadata
+      if (filteredMetadataKeys.indexOf(key) !== -1) continue;
+      ret.push({ key: key, value: String(metadataJson[key]) });
     }
     for (const key of commentKeys) {
-      if (prioritizedCommentKeys.indexOf(key) === -1) {
-        ret.push({ key: key, value: String(commentJson[key]) });
-      }
+      // Remaining values in comments
+      if (prioritizedCommentKeys.indexOf(key) !== -1) continue;
+      // Use "[]" to init if obj is empty array
+      const obj = Array.isArray(commentJson[key]) && commentJson[key].length === 0 ? "[]" : String(commentJson[key]);
+      ret.push({ key: key, value: obj });
     }
     console.log(ret);
 
