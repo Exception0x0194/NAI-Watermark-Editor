@@ -20,6 +20,9 @@
     style="margin:10px; display: flex; justify-content: space-between; align-items: center;">
     <span style="">已导入文件数量：{{ filesRef.length }}</span>
     <div style="">
+      <el-button @click="clearFiles">清空图片</el-button>
+    </div>
+    <div style="">
       <el-button type="primary" @click="saveMetadata">导出图片</el-button>
     </div>
   </div>
@@ -84,6 +87,12 @@ async function handleUpload(file: File) {
     });
   }
   return false;
+}
+
+function clearFiles() {
+  filesRef.value = [];
+  firstImageRef.value = null;
+  firstFileInfoRef.value = null;
 }
 
 async function loadImage(file: File) {
