@@ -20,7 +20,7 @@
     style="margin:10px; display: flex; justify-content: space-between; align-items: center;">
     <span style="">已导入文件数量：{{ filesRef.length }}</span>
     <div style="">
-      <el-button type="primary" @click="saveMetadata">保存图片到压缩包</el-button>
+      <el-button type="primary" @click="saveMetadata">导出图片</el-button>
     </div>
   </div>
 
@@ -182,47 +182,22 @@ const saveMetadata = async () => {
     message: "正在写入水印...",
     type: "info",
   });
+  const metadata = getMetadata();
   if (filesRef.value.length == 1) {
     // Single file: download as Blob
     const file = filesRef.value[0];
-    let fileBuffer: ArrayBuffer | null = null;
-    const loadPromise = new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        fileBuffer = e.target!.result as ArrayBuffer;
-        resolve(e);
-      };
-      reader.onerror = (e) => {
-        reject(e);
-      };
-      reader.readAsArrayBuffer(file);
-    });
-    await loadPromise;
-    const u8Array = new Uint8Array(fileBuffer!);
-    // Get edited metadata
-    const metadata = getMetadata();
-    let u8ArrayWithWatermark = new Uint8Array;
-    try {
-      // Embed metadata into image
-      u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
-      // Convert the modified Uint8Array back to Blob
-      const blob = new Blob([u8ArrayWithWatermark], { type: "application/octet-stream" }); // Assumed the image type as JPEG, adjust accordingly
-      // Create a link and trigger the download
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = "👻-" + file.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url); // Clean up URL object
-    } catch (error) {
-      console.error("Error writing watermark: ", error);
-      ElMessage({
-        message: "水印写入失败",
-        type: "error",
-      });
-    }
+    const u8ArrayWithWatermark = await getEmbeddedImageBytes(file, metadata);
+    // Convert the modified Uint8Array back to Blob
+    const blob = new Blob([u8ArrayWithWatermark], { type: "application/octet-stream" });
+    // Create a link and trigger the download
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = "👻-" + file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url); // Clean up URL object
   }
   else {
     // Multiple files: create a ZIP stream
@@ -237,30 +212,8 @@ const saveMetadata = async () => {
       }
     }));
     for (const file of filesRef.value) {
-      // Read files
-      let fileBuffer: ArrayBuffer | null = null;
-      const loadPromise = new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          fileBuffer = e.target!.result as ArrayBuffer;
-          resolve(e);
-        };
-        reader.onerror = (e) => {
-          reject(e);
-        };
-        reader.readAsArrayBuffer(file);
-      });
-      await loadPromise;
-      const u8Array = new Uint8Array(fileBuffer!);
-      // Get edited metadata
-      const metadata = getMetadata();
-      let u8ArrayWithWatermark = new Uint8Array;
-      try {
-        // Embed metadata into image
-        u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
-      } catch (error) {
-        console.log("Error writing watermark: ", error);
-      }
+      // Get file bytes
+      const u8ArrayWithWatermark = await getEmbeddedImageBytes(file, metadata);
       // Write into ZIP stream
       await zipWriter.add("👻-" + file.name, new Uint8ArrayReader(u8ArrayWithWatermark));
     }
@@ -273,8 +226,30 @@ const saveMetadata = async () => {
   });
 };
 
-function getEmbeddedImageBytes(file, metadata) {
-
+async function getEmbeddedImageBytes(file: File, metadata: Object) {
+  // Read files
+  let fileBuffer: ArrayBuffer | null = null;
+  const loadPromise = new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      fileBuffer = e.target!.result as ArrayBuffer;
+      resolve(e);
+    };
+    reader.onerror = (e) => {
+      reject(e);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+  await loadPromise;
+  const u8Array = new Uint8Array(fileBuffer!);
+  let u8ArrayWithWatermark = new Uint8Array;
+  try {
+    // Embed metadata into image
+    u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
+  } catch (error) {
+    console.log("Error writing watermark: ", error);
+  }
+  return u8ArrayWithWatermark;
 }
 
 function getMetadata() {
