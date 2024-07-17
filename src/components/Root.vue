@@ -73,7 +73,7 @@ async function handleUpload(file: File) {
 
   let fileExt = file.name.split(".").pop()!.toLowerCase();
   if (availableImgExt.indexOf(fileExt) != -1) {
-    // 加载文件信息
+    // Load image / metadata
     await loadImage(file);
     await loadImageInfo(file);
     filesRef.value = [...filesRef.value, file];
@@ -88,7 +88,7 @@ async function handleUpload(file: File) {
 
 async function loadImage(file: File) {
   if (firstImageRef.value !== null) return;
-  // 读取文件内容
+  // Read file
   let fileBuffer: string | null = null;
   const loadPromise = new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -121,7 +121,7 @@ async function loadImage(file: File) {
 
 async function loadImageInfo(file: File) {
   if (firstFileInfoRef.value !== null) return;
-  // 读取文件内容
+  // Read file
   let fileBuffer: ArrayBuffer | null = null;
   const loadPromise = new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -136,7 +136,7 @@ async function loadImageInfo(file: File) {
   });
   await loadPromise;
 
-  // 读取需要显示的 metadata
+  // Read metadata to be displayed
   try {
     const u8array = new Uint8Array(fileBuffer!);
     const decodedString = decode_stealth_watermark(u8array);
@@ -149,7 +149,7 @@ async function loadImageInfo(file: File) {
 
     const ret: { key: string, value: string }[] = [];
     for (const key of prioritizedCommentKeys) {
-      // Push pos/neg prompts (from comments) first
+      // Push prompt and UC (from comments) first
       ret.push({ key: key, value: String(commentJson[key]) });
     }
     for (const key of metadataKeys) {
@@ -179,24 +179,12 @@ async function loadImageInfo(file: File) {
 
 const saveMetadata = async () => {
   ElMessage({
-    message: "正在写入水印并打包...",
+    message: "正在写入水印...",
     type: "info",
   });
-
-  // 创建 ZIP 文件的写入流
-  const fileStream = createWriteStream("images_with_edited_watermark.zip");
-  const writer = fileStream.getWriter();
-  const zipWriter = new ZipWriter(new WritableStream({
-    write(chunk) {
-      return writer.write(chunk);
-    },
-    close() {
-      writer.close();
-    }
-  }));
-
-  for (const file of filesRef.value) {
-    // 读取文件内容
+  if (filesRef.value.length == 1) {
+    // Single file: download as Blob
+    const file = filesRef.value[0];
     let fileBuffer: ArrayBuffer | null = null;
     const loadPromise = new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -211,26 +199,83 @@ const saveMetadata = async () => {
     });
     await loadPromise;
     const u8Array = new Uint8Array(fileBuffer!);
-    // 获取修改后的 metadata 内容
+    // Get edited metadata
     const metadata = getMetadata();
+    let u8ArrayWithWatermark = new Uint8Array;
     try {
-      // 写入水印到图片中
-      const u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
-      // 写入文件到 zip 流
-      await zipWriter.add("👻-" + file.name, new Uint8ArrayReader(u8ArrayWithWatermark));
+      // Embed metadata into image
+      u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
+      // Convert the modified Uint8Array back to Blob
+      const blob = new Blob([u8ArrayWithWatermark], { type: "application/octet-stream" }); // Assumed the image type as JPEG, adjust accordingly
+      // Create a link and trigger the download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = "👻-" + file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url); // Clean up URL object
     } catch (error) {
-      console.log("Error writing watermark: ", error);
+      console.error("Error writing watermark: ", error);
+      ElMessage({
+        message: "水印写入失败",
+        type: "error",
+      });
     }
   }
-
-  // 完成写入
-  await zipWriter.close();
-
+  else {
+    // Multiple files: create a ZIP stream
+    const fileStream = createWriteStream("images_with_edited_watermark.zip");
+    const writer = fileStream.getWriter();
+    const zipWriter = new ZipWriter(new WritableStream({
+      write(chunk) {
+        return writer.write(chunk);
+      },
+      close() {
+        writer.close();
+      }
+    }));
+    for (const file of filesRef.value) {
+      // Read files
+      let fileBuffer: ArrayBuffer | null = null;
+      const loadPromise = new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          fileBuffer = e.target!.result as ArrayBuffer;
+          resolve(e);
+        };
+        reader.onerror = (e) => {
+          reject(e);
+        };
+        reader.readAsArrayBuffer(file);
+      });
+      await loadPromise;
+      const u8Array = new Uint8Array(fileBuffer!);
+      // Get edited metadata
+      const metadata = getMetadata();
+      let u8ArrayWithWatermark = new Uint8Array;
+      try {
+        // Embed metadata into image
+        u8ArrayWithWatermark = embed_stealth_watermark(u8Array, JSON.stringify(metadata));
+      } catch (error) {
+        console.log("Error writing watermark: ", error);
+      }
+      // Write into ZIP stream
+      await zipWriter.add("👻-" + file.name, new Uint8ArrayReader(u8ArrayWithWatermark));
+    }
+    // Close ZIP stream
+    await zipWriter.close();
+  }
   ElMessage({
-    message: "已保存压缩包",
+    message: "已保存图片",
     type: "success",
   });
 };
+
+function getEmbeddedImageBytes(file, metadata) {
+
+}
 
 function getMetadata() {
   if (firstFileInfoRef.value === null) {
